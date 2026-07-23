@@ -35,21 +35,60 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Project Dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install @capacitor/assets -D
 
       - name: Initialize & Configure Capacitor
         run: |
           npx cap init "${{ github.event.inputs.app_name }}" "com.web2apk.app" --web-dir public
-          npx cap add android
           
-          # Inject target URL into capacitor.config.json
+          # Setup logo for the splash screen and home screen icon
+          cp logo.png public/logo.png || true
+          mkdir -p assets
+          cp logo.png assets/icon.png || true
+          
+          # Generate the Custom Splash Screen HTML with Susmit's text
+          node -e '
+            const fs = require("fs");
+            const html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>${{ github.event.inputs.app_name }}</title>
+              <style>
+                body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #ffffff; font-family: system-ui, sans-serif; }
+                img { max-width: 150px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+                p { color: #555; font-size: 16px; font-weight: 500; }
+                .heart { color: #ff4b4b; }
+              </style>
+            </head>
+            <body>
+              <img src="logo.png" alt="Logo" onerror="this.style.display=\`none\`">
+              <p>made with <span class="heart">❤️</span> by Susmit</p>
+              <script>
+                setTimeout(() => {
+                  window.location.href = "${{ github.event.inputs.web_url }}";
+                }, 2500);
+              </script>
+            </body>
+            </html>
+            `;
+            fs.writeFileSync("public/index.html", html);
+          '
+
+          # Allow external navigation so the website stays inside the app
           node -e '
             const fs = require("fs");
             const config = JSON.parse(fs.readFileSync("capacitor.config.json", "utf8"));
-            config.server = { url: "${{ github.event.inputs.web_url }}", cleartext: true };
+            config.server = { allowNavigation: ["*"] };
             fs.writeFileSync("capacitor.config.json", JSON.stringify(config, null, 2));
           '
           
+          npx cap add android
+          npx capacitor-assets generate --android || true
           npx cap sync android
 
       - name: Build Android APK
